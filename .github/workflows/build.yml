@@ -18,7 +18,6 @@ jobs:
       env:
         DOCKER_CLI_EXPERIMENTAL: enabled
         DOCKER_BUILDKIT: 1
-        PREFER_BUILDCTL: 1
       run: |
         docker build --tag buildx --target release --platform=local .
 
@@ -26,7 +25,6 @@ jobs:
       env:
         DOCKER_CLI_EXPERIMENTAL: enabled
         DOCKER_BUILDKIT: 1
-        PREFER_BUILDCTL: 1
       run: |
         docker build --target release --platform=local --output ARTIFACTS .
         ARTIFACTS/buildx* version
