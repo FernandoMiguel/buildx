@@ -1,0 +1,36 @@
+name: Build buildx binary
+
+on:
+  push:
+    branches:
+    - 'master'
+    - 'testing/**'
+
+jobs:
+  build-buildx:
+    name: Build buildx binary
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: checkout
+      uses: actions/checkout@v1
+      with:
+        fetch-depth: 1
+
+    - name: buildx building
+      env:
+        DOCKER_CLI_EXPERIMENTAL: enabled
+        DOCKER_BUILDKIT: 1
+        PREFER_BUILDCTL: 1
+      run: |
+          docker build --target release --platform=local --output ARTIFACTS .
+          cd ARTIFACTS
+          ls -lhatr
+          ./buildx* version
+
+    - name: publish
+      uses: actions/upload-artifact@master
+      with:
+        name: buildx
+        path: ./ARTIFACTS
