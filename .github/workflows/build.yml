@@ -1,10 +1,6 @@
 name: Build buildx binary
 
-on:
-  push:
-    branches:
-    - 'master'
-    - 'testing/**'
+on: [push, pull_request]
 
 jobs:
   build-buildx:
@@ -18,14 +14,21 @@ jobs:
       with:
         fetch-depth: 1
 
+    - name: buildx docker image
+      env:
+        DOCKER_CLI_EXPERIMENTAL: enabled
+        DOCKER_BUILDKIT: 1
+        PREFER_BUILDCTL: 1
+      run: |
+        docker build --tag buildx --target release --platform=local .
+
     - name: buildx building
       env:
         DOCKER_CLI_EXPERIMENTAL: enabled
         DOCKER_BUILDKIT: 1
         PREFER_BUILDCTL: 1
       run: |
-        time docker build --tag buildx --target release --platform=local .
-        time docker build --target release --platform=local --output ARTIFACTS .
+        docker build --target release --platform=local --output ARTIFACTS .
         ARTIFACTS/buildx* version
 
     - name: publish
