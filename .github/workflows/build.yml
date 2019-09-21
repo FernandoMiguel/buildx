@@ -26,11 +26,10 @@ jobs:
       run: |
           docker build --target release --platform=local --output ARTIFACTS .
           cd ARTIFACTS
-          ls -lhatr
           ./buildx* version
 
     - name: publish
       uses: actions/upload-artifact@master
       with:
-        name: buildx
-        path: ./ARTIFACTS
+        name: buildx-${{ github.sha }}
+        path: ./ARTIFACTS/
