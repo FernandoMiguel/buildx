@@ -24,12 +24,18 @@ jobs:
         DOCKER_BUILDKIT: 1
         PREFER_BUILDCTL: 1
       run: |
-          docker build --target release --platform=local --output ARTIFACTS .
-          cd ARTIFACTS
-          ./buildx* version
+        time docker build --tag buildx --target release --platform=local .
+        time docker build --target release --platform=local --output ARTIFACTS .
+        ARTIFACTS/buildx* version
 
     - name: publish
       uses: actions/upload-artifact@master
       with:
         name: buildx-${{ github.sha }}
         path: ./ARTIFACTS/
+
+    - name: upload Docker image
+      run: |
+        docker login docker.pkg.github.com --username fernandomiguel --password ${{ secrets.PACKAGES_TOKEN }}
+        docker tag buildx docker.pkg.github.com/fernandomiguel/buildx/buildx:${{ github.sha }}-${INVOCATION_ID}
+        docker push docker.pkg.github.com/fernandomiguel/buildx/buildx:${{ github.sha }}-${INVOCATION_ID}
