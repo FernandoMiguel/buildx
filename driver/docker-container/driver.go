@@ -1,6 +1,8 @@
 package docker
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"io"
 	"io/ioutil"
@@ -20,11 +22,13 @@ import (
 	"github.com/pkg/errors"
 )
 
-var buildkitImage = "moby/buildkit:master" // TODO: make this verified and configuratble
+var defaultBuildkitImage = "moby/buildkit:buildx-stable-1" // TODO: make this verified
 
 type Driver struct {
 	driver.InitConfig
 	factory driver.Factory
+	netMode string
+	image   string
 }
 
 func (d *Driver) Bootstrap(ctx context.Context, l progress.Logger) error {
@@ -49,8 +53,12 @@ func (d *Driver) Bootstrap(ctx context.Context, l progress.Logger) error {
 }
 
 func (d *Driver) create(ctx context.Context, l progress.SubLogger) error {
-	if err := l.Wrap("pulling image "+buildkitImage, func() error {
-		rc, err := d.DockerAPI.ImageCreate(ctx, buildkitImage, types.ImageCreateOptions{})
+	imageName := defaultBuildkitImage
+	if d.image != "" {
+		imageName = d.image
+	}
+	if err := l.Wrap("pulling image "+imageName, func() error {
+		rc, err := d.DockerAPI.ImageCreate(ctx, imageName, types.ImageCreateOptions{})
 		if err != nil {
 			return err
 		}
@@ -59,14 +67,33 @@ func (d *Driver) create(ctx context.Context, l progress.SubLogger) error {
 	}); err != nil {
 		return err
 	}
+
+	cfg := &container.Config{
+		Image: imageName,
+	}
+	if d.InitConfig.BuildkitFlags != nil {
+		cfg.Cmd = d.InitConfig.BuildkitFlags
+	}
+
 	if err := l.Wrap("creating container "+d.Name, func() error {
-		_, err := d.DockerAPI.ContainerCreate(ctx, &container.Config{
-			Image: buildkitImage,
-		}, &container.HostConfig{
+		hc := &container.HostConfig{
 			Privileged: true,
-		}, &network.NetworkingConfig{}, d.Name)
+		}
+		if d.netMode != "" {
+			hc.NetworkMode = container.NetworkMode(d.netMode)
+		}
+		_, err := d.DockerAPI.ContainerCreate(ctx, cfg, hc, &network.NetworkingConfig{}, d.Name)
 		if err != nil {
 			return err
+		}
+		if f := d.InitConfig.ConfigFile; f != "" {
+			buf, err := readFileToTar(f)
+			if err != nil {
+				return err
+			}
+			if err := d.DockerAPI.CopyToContainer(ctx, d.Name, "/", buf, dockertypes.CopyToContainerOptions{}); err != nil {
+				return err
+			}
 		}
 		if err := d.start(ctx, l); err != nil {
 			return err
@@ -238,4 +265,27 @@ type demux struct {
 
 func (d *demux) Read(dt []byte) (int, error) {
 	return d.Reader.Read(dt)
+}
+
+func readFileToTar(fn string) (*bytes.Buffer, error) {
+	buf := bytes.NewBuffer(nil)
+	tw := tar.NewWriter(buf)
+	dt, err := ioutil.ReadFile(fn)
+	if err != nil {
+		return nil, err
+	}
+	if err := tw.WriteHeader(&tar.Header{
+		Name: "/etc/buildkit/buildkitd.toml",
+		Size: int64(len(dt)),
+		Mode: 0644,
+	}); err != nil {
+		return nil, err
+	}
+	if _, err := tw.Write(dt); err != nil {
+		return nil, err
+	}
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	return buf, nil
 }

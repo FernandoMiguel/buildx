@@ -77,7 +77,20 @@ func mergeConfig(c1, c2 Config) Config {
 		if c1.Group == nil {
 			c1.Group = map[string]Group{}
 		}
-		c1.Group[k] = g
+		if g1, exists := c1.Group[k]; exists {
+		nextTarget:
+			for _, t := range g.Targets {
+				for _, t2 := range g1.Targets {
+					if t == t2 {
+						continue nextTarget
+					}
+				}
+				g1.Targets = append(g1.Targets, t)
+			}
+			c1.Group[k] = g1
+		} else {
+			c1.Group[k] = g
+		}
 	}
 
 	for k, t := range c2.Target {
@@ -248,10 +261,10 @@ func (t *Target) normalize() {
 	t.Outputs = removeDupes(t.Outputs)
 }
 
-func TargetsToBuildOpt(m map[string]Target) (map[string]build.Options, error) {
+func TargetsToBuildOpt(m map[string]Target, noCache, pull bool) (map[string]build.Options, error) {
 	m2 := make(map[string]build.Options, len(m))
 	for k, v := range m {
-		bo, err := toBuildOpt(v)
+		bo, err := toBuildOpt(v, noCache, pull)
 		if err != nil {
 			return nil, err
 		}
@@ -260,7 +273,7 @@ func TargetsToBuildOpt(m map[string]Target) (map[string]build.Options, error) {
 	return m2, nil
 }
 
-func toBuildOpt(t Target) (*build.Options, error) {
+func toBuildOpt(t Target, noCache, pull bool) (*build.Options, error) {
 	if v := t.Context; v != nil && *v == "-" {
 		return nil, errors.Errorf("context from stdin not allowed in bake")
 	}
@@ -289,6 +302,8 @@ func toBuildOpt(t Target) (*build.Options, error) {
 		Tags:      t.Tags,
 		BuildArgs: t.Args,
 		Labels:    t.Labels,
+		NoCache:   noCache,
+		Pull:      pull,
 	}
 
 	platforms, err := platformutil.Parse(t.Platforms)

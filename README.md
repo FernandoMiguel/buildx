@@ -41,30 +41,21 @@ _buildx is Tech Preview_
 
 # Installing
 
-Using `buildx` as a docker CLI plugin requires using Docker 19.03.0 beta. A limited set of functionality works with older versions of Docker when invoking the binary directly.
+Using `buildx` as a docker CLI plugin requires using Docker 19.03. A limited set of functionality works with older versions of Docker when invoking the binary directly.
 
-### Docker Desktop (Edge)
+### Docker CE
 
-`buildx` is included with Docker Desktop Edge builds since 19.03.0-beta3.
-
-For more information see https://docs.docker.com/docker-for-mac/edge-release-notes/
-
-### Docker CE nightly builds
-
-`buildx` comes bundled with the Docker CE nightly builds. 
-- Mac: https://download.docker.com/mac/static/nightly/
-- Linux:
-```
-$ # uncomment next line to uninstall previous Docker CE installation if present
-$ # apt purge docker-ce docker-ce-cli
-$ curl -fsSL https://get.docker.com/ -o docker-install.sh
-$ CHANNEL=nightly sh docker-install.sh
-```
+`buildx` comes bundled with Docker CE starting with 19.03, but requires experimental mode to be enabled on the Docker CLI.
+To enable it, `"experimental": "enabled"` can be added to the CLI configuration file `~/.docker/config.json`. An alternative is to set the `DOCKER_CLI_EXPERIMENTAL=enabled` environment variable.
 
 ### Binary release
 
 Download the latest binary release from https://github.com/docker/buildx/releases/latest and copy it to `~/.docker/cli-plugins` folder with name `docker-buildx`.
 
+Change the permission to execute:
+```sh
+chmod a+x ~/.docker/cli-plugins/docker-buildx
+```
 
 After installing you can run `docker buildx` to see the new commands.
 
@@ -174,6 +165,7 @@ Options:
 | Flag | Description |
 | --- | --- |
 | --add-host []         | Add a custom host-to-IP mapping (host:ip)
+| --allow []        | Allow extra privileged entitlement, e.g. network.host, security.insecure
 | --build-arg []    | Set build-time variables
 | --cache-from []   | External cache sources (eg. user/app:cache, type=local,src=path/to/dir)
 | --cache-to []     | Cache export destinations (eg. user/app:cache, type=local,dest=path/to/dir)
@@ -295,7 +287,7 @@ Shorthand for [`--output=type=docker`](#docker). Will automatically load the sin
 
 #### `--cache-from=[NAME|type=TYPE[,KEY=VALUE]]`
 
-Use an external cache source for a build. Supported types are `registry` and `local`. The `registry` source can import cache from a cache manifest or (special) image configuration on the registry. The `local` source can export cache from local files previously exported with `--cache-to`.
+Use an external cache source for a build. Supported types are `registry` and `local`. The `registry` source can import cache from a cache manifest or (special) image configuration on the registry. The `local` source can import cache from local files previously exported with `--cache-to`.
 
 If no type is specified, `registry` exporter is used with a specified reference.
 
@@ -327,6 +319,20 @@ docker buildx build --cache-to=type=registry,ref=user/app .
 docker buildx build --cache-to=type=local,dest=path/to/cache .
 ```
 
+#### `--allow=ENTITLEMENT`
+
+Allow extra privileged entitlement. List of entitlements:
+
+- `network.host` - Allows executions with host networking.
+- `security.insecure` - Allows executions without sandbox. See [related Dockerfile extensions](https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/experimental.md#run---securityinsecuresandbox).
+
+For entitlements to be enabled, the `buildkitd` daemon also needs to allow them with `--allow-insecure-entitlement` (see [`create --buildkitd-flags`](#--buildkitd-flags-flags))
+
+Example:
+```
+$ docker buildx create --use --name insecure-builder --buildkitd-flags '--allow-insecure-entitlement security.insecure'
+$ docker buildx build --allow security.insecure .
+```
 
 ### `buildx create [OPTIONS] [CONTEXT|ENDPOINT]`
 
@@ -340,21 +346,16 @@ Options:
 
 | Flag | Description |
 | --- | --- |
-| --append                | Append a node to builder instead of changing it
-| --driver string         | Driver to use (eg. docker-container)
-| --leave                 | Remove a node from builder instead of changing it
-| --name string           | Builder instance name
-| --node string           | Create/modify node with given name
-| --platform stringArray  | Fixed platforms for current node
-| --use                   | Set the current builder instance
-
-#### `--driver DRIVER`
-
-Sets the builder driver to be used. There are two available drivers, each have their own specificities.
-
-- `docker` - Uses the builder that is built into the docker daemon. With this driver, the [`--load`](#--load) flag is implied by default on `buildx build`. However, building multi-platform images or exporting cache is not currently supported.
-
-- `docker-container` - Uses a buildkit container that will be spawned via docker. With this driver, both building multi-platform images and exporting cache are supported. However, images built will not automatically appear in `docker images` (see [`build --load`](#--load)).
+| --append                 | Append a node to builder instead of changing it
+| --buildkitd-flags string | Flags for buildkitd daemon
+| --config string          | BuildKit config file
+| --driver string          | Driver to use (eg. docker-container)
+| --driver-opt stringArray | Options for the driver
+| --leave                  | Remove a node from builder instead of changing it
+| --name string            | Builder instance name
+| --node string            | Create/modify node with given name
+| --platform stringArray   | Fixed platforms for current node
+| --use                    | Set the current builder instance
 
 #### `--append`
 
@@ -367,6 +368,41 @@ eager_beaver
 $ docker buildx create --name eager_beaver --append mycontext2
 eager_beaver
 ```
+
+#### `--buildkitd-flags FLAGS`
+
+Adds flags when starting the buildkitd daemon. They take precedence over the configuration file specified by [`--config`](#--config-file). See `buildkitd --help` for the available flags.
+
+Example:
+```
+--buildkitd-flags '--debug --debugaddr 0.0.0.0:6666'
+```
+
+#### `--config FILE`
+
+Specifies the configuration file for the buildkitd daemon to use. The configuration can be overridden by [`--buildkitd-flags`](#--buildkitd-flags-flags). See an [example buildkitd configuration file](https://github.com/moby/buildkit/blob/master/docs/buildkitd.toml.md).
+
+#### `--driver DRIVER`
+
+Sets the builder driver to be used. There are two available drivers, each have their own specificities.
+
+- `docker` - Uses the builder that is built into the docker daemon. With this driver, the [`--load`](#--load) flag is implied by default on `buildx build`. However, building multi-platform images or exporting cache is not currently supported.
+
+- `docker-container` - Uses a buildkit container that will be spawned via docker. With this driver, both building multi-platform images and exporting cache are supported. However, images built will not automatically appear in `docker images` (see [`build --load`](#--load)).
+
+
+#### `--driver-opt OPTIONS`
+
+Passes additional driver-specific options. Details for each driver:
+
+- `docker` - No driver options
+- `docker-container`
+  - `image` - Sets the container image to be used for running buildkit.
+  - `network` - Sets the network mode for running the buildkit container.
+  - Example:
+    ```
+    --driver docker-container --driver-opt image=moby/buildkit:master,network=host
+    ```
 
 #### `--leave`
 
@@ -541,23 +577,23 @@ Note: Design of bake command is work in progress, the user experience may change
 Example HCL defintion:
 
 ```
-group “default” {
-	targets = [“db”, “webapp-dev”]
+group "default" {
+	targets = ["db", "webapp-dev"]
 }
 
-target “webapp-dev” {
+target "webapp-dev" {
 	dockerfile = "Dockerfile.webapp"
 	tags = ["docker.io/username/webapp"]
 }
 
-target “webapp-release” {
-	inherits = [“webapp-dev”]
-	platforms = [“linux/amd64”, “linux/arm64”]
+target "webapp-release" {
+	inherits = ["webapp-dev"]
+	platforms = ["linux/amd64", "linux/arm64"]
 }
 
-target “db” {
+target "db" {
 	dockerfile = "Dockerfile.db"
-	tags = [“docker.io/username/db”]
+	tags = ["docker.io/username/db"]
 }
 ```
 

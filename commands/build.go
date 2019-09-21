@@ -44,6 +44,8 @@ type buildOptions struct {
 	squash bool
 	quiet  bool
 
+	allow []string
+
 	// hidden
 	// untrusted   bool
 	// ulimits        *opts.UlimitOpt
@@ -84,8 +86,8 @@ func runBuild(dockerCli command.Cli, in buildOptions) error {
 			InStream:       os.Stdin,
 		},
 		Tags:        in.tags,
-		Labels:      listToMap(in.labels),
-		BuildArgs:   listToMap(in.buildArgs),
+		Labels:      listToMap(in.labels, false),
+		BuildArgs:   listToMap(in.buildArgs, true),
 		Pull:        in.pull,
 		NoCache:     in.noCache,
 		Target:      in.target,
@@ -167,6 +169,12 @@ func runBuild(dockerCli command.Cli, in buildOptions) error {
 	}
 	opts.CacheTo = cacheExports
 
+	allow, err := build.ParseEntitlements(in.allow)
+	if err != nil {
+		return err
+	}
+	opts.Allow = allow
+
 	return buildTargets(ctx, dockerCli, map[string]build.Options{"default": opts}, in.progress)
 }
 
@@ -213,6 +221,8 @@ func buildCmd(dockerCli command.Cli) *cobra.Command {
 	flags.StringArrayVar(&options.cacheTo, "cache-to", []string{}, "Cache export destinations (eg. user/app:cache, type=local,dest=path/to/dir)")
 
 	flags.StringVar(&options.target, "target", "", "Set the target build stage to build.")
+
+	flags.StringSliceVar(&options.allow, "allow", []string{}, "Allow extra privileged entitlement, e.g. network.host, security.insecure")
 
 	// not implemented
 	flags.BoolVarP(&options.quiet, "quiet", "q", false, "Suppress the build output and print image ID on success")
@@ -282,12 +292,16 @@ func commonFlags(options *commonOptions, flags *pflag.FlagSet) {
 	flags.BoolVar(&options.pull, "pull", false, "Always attempt to pull a newer version of the image")
 }
 
-func listToMap(values []string) map[string]string {
+func listToMap(values []string, defaultEnv bool) map[string]string {
 	result := make(map[string]string, len(values))
 	for _, value := range values {
 		kv := strings.SplitN(value, "=", 2)
 		if len(kv) == 1 {
-			result[kv[0]] = ""
+			if defaultEnv {
+				result[kv[0]] = os.Getenv(kv[0])
+			} else {
+				result[kv[0]] = ""
+			}
 		} else {
 			result[kv[0]] = kv[1]
 		}
