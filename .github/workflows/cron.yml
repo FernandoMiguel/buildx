@@ -1,0 +1,47 @@
+name: rebase upstream master
+
+on:
+  schedule:
+    # * is a special character in YAML so you have to quote this string
+    - cron:  '27 4 * * 2'
+
+jobs:
+  rebase:
+    name: rebase upstream master
+    runs-on: ubuntu-latest
+
+    steps:
+
+    # - uses: actions/checkout@master
+    # - name: Automatic Rebase
+    #   uses: cirrus-actions/rebase@master
+    #   env:
+    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # - name: checkout
+    #   uses: actions/checkout@master
+    #   with:
+    #     ref: master
+
+    - name: git login
+      run: |
+        git config --global credential.helper store
+        git config --global user.name ${{ github.actor }}
+        git config --global user.password  ${{ secrets.GITHUB_TOKEN }}
+        git config --global url."https://github.com/".insteadOf git@github.com:
+        git config --global url."https://".insteadOf git://
+        echo "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com" > ~/.git-credentials
+
+
+    - name: git clone
+      run: git clone --branch master https://github.com/FernandoMiguel/buildx.git
+
+    - name: pull upstream
+      run: |
+        cd buildx
+        git pull https://github.com/docker/buildx.git master
+
+    - name: push
+      run: |
+        cd buildx
+        git push
