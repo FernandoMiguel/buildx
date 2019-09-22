@@ -14,12 +14,12 @@ jobs:
       with:
         fetch-depth: 1
 
-    - name: buildx docker image
-      env:
-        DOCKER_CLI_EXPERIMENTAL: enabled
-        DOCKER_BUILDKIT: 1
-      run: |
-        docker build --tag buildx --target release --platform=local .
+    # - name: buildx docker image
+    #   env:
+    #     DOCKER_CLI_EXPERIMENTAL: enabled
+    #     DOCKER_BUILDKIT: 1
+    #   run: |
+    #     docker build --tag buildx --target release --platform=local .
 
     - name: buildx building
       env:
@@ -35,8 +35,8 @@ jobs:
         name: buildx-${{ github.sha }}
         path: ./ARTIFACTS/
 
-    - name: upload Docker image
-      run: |
-        docker login docker.pkg.github.com --username fernandomiguel --password ${{ secrets.PACKAGES_TOKEN }}
-        docker tag buildx docker.pkg.github.com/fernandomiguel/buildx/buildx:${{ github.sha }}-${INVOCATION_ID}
-        docker push docker.pkg.github.com/fernandomiguel/buildx/buildx:${{ github.sha }}-${INVOCATION_ID}
+    # - name: upload Docker image
+    #   run: |
+    #     docker login docker.pkg.github.com --username fernandomiguel --password ${{ secrets.PACKAGES_TOKEN }}
+    #     docker tag buildx docker.pkg.github.com/fernandomiguel/buildx/buildx:${{ github.sha }}-${INVOCATION_ID}
+    #     docker push docker.pkg.github.com/fernandomiguel/buildx/buildx:${{ github.sha }}-${INVOCATION_ID}
