@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/docker/buildx/build"
@@ -23,13 +24,14 @@ func ReadTargets(ctx context.Context, files, targets, overrides []string) (map[s
 		}
 		c = mergeConfig(c, *cfg)
 	}
-	if err := c.setOverrides(overrides); err != nil {
+	o, err := c.newOverrides(overrides)
+	if err != nil {
 		return nil, err
 	}
 	m := map[string]Target{}
 	for _, n := range targets {
 		for _, n := range c.ResolveGroup(n) {
-			t, err := c.ResolveTarget(n)
+			t, err := c.ResolveTarget(n, o)
 			if err != nil {
 				return nil, err
 			}
@@ -105,76 +107,113 @@ func mergeConfig(c1, c2 Config) Config {
 	return c1
 }
 
-func (c Config) setOverrides(v []string) error {
+func (c Config) expandTargets(pattern string) ([]string, error) {
+	if _, ok := c.Target[pattern]; ok {
+		return []string{pattern}, nil
+	}
+	var names []string
+	for name := range c.Target {
+		ok, err := path.Match(pattern, name)
+		if err != nil {
+			return nil, errors.Wrapf(err, "could not match targets with '%s'", pattern)
+		}
+		if ok {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return nil, errors.Errorf("could not find any target matching '%s'", pattern)
+	}
+	return names, nil
+}
+
+func (c Config) newOverrides(v []string) (map[string]Target, error) {
+	m := map[string]Target{}
 	for _, v := range v {
 
 		parts := strings.SplitN(v, "=", 2)
 		keys := strings.SplitN(parts[0], ".", 3)
 		if len(keys) < 2 {
-			return errors.Errorf("invalid override key %s, expected target.name", parts[0])
+			return nil, errors.Errorf("invalid override key %s, expected target.name", parts[0])
 		}
 
-		name := keys[0]
+		pattern := keys[0]
 		if len(parts) != 2 && keys[1] != "args" {
-			return errors.Errorf("invalid override %s, expected target.name=value", v)
+			return nil, errors.Errorf("invalid override %s, expected target.name=value", v)
 		}
 
-		t, ok := c.Target[name]
-		if !ok {
-			return errors.Errorf("unknown target %s", name)
+		names, err := c.expandTargets(pattern)
+		if err != nil {
+			return nil, err
 		}
 
-		switch keys[1] {
-		case "context":
-			t.Context = &parts[1]
-		case "dockerfile":
-			t.Dockerfile = &parts[1]
-		case "args":
-			if len(keys) != 3 {
-				return errors.Errorf("invalid key %s, args requires name", parts[0])
-			}
-			if t.Args == nil {
-				t.Args = map[string]string{}
-			}
-			if len(parts) < 2 {
-				v, ok := os.LookupEnv(keys[2])
-				if ok {
-					t.Args[keys[2]] = v
+		for _, name := range names {
+			t := m[name]
+
+			switch keys[1] {
+			case "context":
+				t.Context = &parts[1]
+			case "dockerfile":
+				t.Dockerfile = &parts[1]
+			case "args":
+				if len(keys) != 3 {
+					return nil, errors.Errorf("invalid key %s, args requires name", parts[0])
 				}
-			} else {
-				t.Args[keys[2]] = parts[1]
+				if t.Args == nil {
+					t.Args = map[string]string{}
+				}
+				if len(parts) < 2 {
+					v, ok := os.LookupEnv(keys[2])
+					if ok {
+						t.Args[keys[2]] = v
+					}
+				} else {
+					t.Args[keys[2]] = parts[1]
+				}
+			case "labels":
+				if len(keys) != 3 {
+					return nil, errors.Errorf("invalid key %s, lanels requires name", parts[0])
+				}
+				if t.Labels == nil {
+					t.Labels = map[string]string{}
+				}
+				t.Labels[keys[2]] = parts[1]
+			case "tags":
+				t.Tags = append(t.Tags, parts[1])
+			case "cache-from":
+				t.CacheFrom = append(t.CacheFrom, parts[1])
+			case "cache-to":
+				t.CacheTo = append(t.CacheTo, parts[1])
+			case "target":
+				s := parts[1]
+				t.Target = &s
+			case "secrets":
+				t.Secrets = append(t.Secrets, parts[1])
+			case "ssh":
+				t.SSH = append(t.SSH, parts[1])
+			case "platform":
+				t.Platforms = append(t.Platforms, parts[1])
+			case "output":
+				t.Outputs = append(t.Outputs, parts[1])
+			case "no-cache":
+				noCache, err := strconv.ParseBool(parts[1])
+				if err != nil {
+					return nil, errors.Errorf("invalid value %s for boolean key no-cache", parts[1])
+				}
+				t.NoCache = noCache
+			case "pull":
+				pull, err := strconv.ParseBool(parts[1])
+				if err != nil {
+					return nil, errors.Errorf("invalid value %s for boolean key pull", parts[1])
+				}
+				t.Pull = pull
+			default:
+				return nil, errors.Errorf("unknown key: %s", keys[1])
 			}
-		case "labels":
-			if len(keys) != 3 {
-				return errors.Errorf("invalid key %s, lanels requires name", parts[0])
-			}
-			if t.Labels == nil {
-				t.Labels = map[string]string{}
-			}
-			t.Labels[keys[2]] = parts[1]
-		case "tags":
-			t.Tags = append(t.Tags, parts[1])
-		case "cache-from":
-			t.CacheFrom = append(t.CacheFrom, parts[1])
-		case "cache-to":
-			t.CacheTo = append(t.CacheTo, parts[1])
-		case "target":
-			s := parts[1]
-			t.Target = &s
-		case "secrets":
-			t.Secrets = append(t.Secrets, parts[1])
-		case "ssh":
-			t.SSH = append(t.SSH, parts[1])
-		case "platform":
-			t.Platforms = append(t.Platforms, parts[1])
-		case "output":
-			t.Outputs = append(t.Outputs, parts[1])
-		default:
-			return errors.Errorf("unknown key: %s", keys[1])
+			m[name] = t
 		}
-		c.Target[name] = t
 	}
-	return nil
+	return m, nil
 }
 
 func (c Config) ResolveGroup(name string) []string {
@@ -197,8 +236,8 @@ func (c Config) group(name string, visited map[string]struct{}) []string {
 	return targets
 }
 
-func (c Config) ResolveTarget(name string) (*Target, error) {
-	t, err := c.target(name, map[string]struct{}{})
+func (c Config) ResolveTarget(name string, overrides map[string]Target) (*Target, error) {
+	t, err := c.target(name, map[string]struct{}{}, overrides)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +252,7 @@ func (c Config) ResolveTarget(name string) (*Target, error) {
 	return t, nil
 }
 
-func (c Config) target(name string, visited map[string]struct{}) (*Target, error) {
+func (c Config) target(name string, visited map[string]struct{}, overrides map[string]Target) (*Target, error) {
 	if _, ok := visited[name]; ok {
 		return nil, nil
 	}
@@ -224,7 +263,7 @@ func (c Config) target(name string, visited map[string]struct{}) (*Target, error
 	}
 	var tt Target
 	for _, name := range t.Inherits {
-		t, err := c.target(name, visited)
+		t, err := c.target(name, visited, overrides)
 		if err != nil {
 			return nil, err
 		}
@@ -233,7 +272,7 @@ func (c Config) target(name string, visited map[string]struct{}) (*Target, error
 		}
 	}
 	t.Inherits = nil
-	tt = merge(merge(defaultTarget(), t), tt)
+	tt = merge(merge(merge(defaultTarget(), tt), t), overrides[name])
 	tt.normalize()
 	return &tt, nil
 }
@@ -244,7 +283,9 @@ type Group struct {
 }
 
 type Target struct {
-	Inherits   []string          `json:"inherits,omitempty" hcl:"inherits,omitempty"`
+	// Inherits is the only field that cannot be overridden with --set
+	Inherits []string `json:"inherits,omitempty" hcl:"inherits,omitempty"`
+
 	Context    *string           `json:"context,omitempty" hcl:"context,omitempty"`
 	Dockerfile *string           `json:"dockerfile,omitempty" hcl:"dockerfile,omitempty"`
 	Args       map[string]string `json:"args,omitempty" hcl:"args,omitempty"`
@@ -257,6 +298,9 @@ type Target struct {
 	SSH        []string          `json:"ssh,omitempty" hcl:"ssh,omitempty"`
 	Platforms  []string          `json:"platforms,omitempty" hcl:"platforms,omitempty"`
 	Outputs    []string          `json:"output,omitempty" hcl:"output,omitempty"`
+	Pull       bool              `json:"pull,omitempty": hcl:"pull,omitempty"`
+	NoCache    bool              `json:"no-cache,omitempty": hcl:"no-cache,omitempty"`
+	// IMPORTANT: if you add more fields here, do not forget to update newOverrides and README.
 }
 
 func (t *Target) normalize() {
@@ -269,10 +313,10 @@ func (t *Target) normalize() {
 	t.Outputs = removeDupes(t.Outputs)
 }
 
-func TargetsToBuildOpt(m map[string]Target, noCache, pull bool) (map[string]build.Options, error) {
+func TargetsToBuildOpt(m map[string]Target) (map[string]build.Options, error) {
 	m2 := make(map[string]build.Options, len(m))
 	for k, v := range m {
-		bo, err := toBuildOpt(v, noCache, pull)
+		bo, err := toBuildOpt(v)
 		if err != nil {
 			return nil, err
 		}
@@ -281,7 +325,7 @@ func TargetsToBuildOpt(m map[string]Target, noCache, pull bool) (map[string]buil
 	return m2, nil
 }
 
-func toBuildOpt(t Target, noCache, pull bool) (*build.Options, error) {
+func toBuildOpt(t Target) (*build.Options, error) {
 	if v := t.Context; v != nil && *v == "-" {
 		return nil, errors.Errorf("context from stdin not allowed in bake")
 	}
@@ -310,8 +354,8 @@ func toBuildOpt(t Target, noCache, pull bool) (*build.Options, error) {
 		Tags:      t.Tags,
 		BuildArgs: t.Args,
 		Labels:    t.Labels,
-		NoCache:   noCache,
-		Pull:      pull,
+		NoCache:   t.NoCache,
+		Pull:      t.Pull,
 	}
 
 	platforms, err := platformutil.Parse(t.Platforms)

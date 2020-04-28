@@ -507,11 +507,13 @@ Options:
 | Flag | Description |
 | --- | --- |
 |  -f, --file stringArray  | Build definition file
+|      --load              | Shorthand for --set=*.output=type=docker
 |      --no-cache          | Do not use cache when building the image
 |      --print             | Print the options without building
 |      --progress string   | Set type of progress output (auto, plain, tty). Use plain to show container output (default "auto")
 |      --pull              | Always attempt to pull a newer version of the image
-|      --set stringArray   | Override target value (eg: target.key=value)
+|      --push              | Shorthand for --set=*.output=type=registry
+|      --set stringArray   | Override target value (eg: targetpattern.key=value)
 
 #### `-f, --file FILE`
 
@@ -554,15 +556,21 @@ Same as `build --progress`. Set type of progress output (auto, plain, tty). Use 
 
 Same as `build --pull`.
 
-#### `--set target.key[.subkey]=value`
+#### `--set targetpattern.key[.subkey]=value`
 
-Override target configurations from command line.
+Override target configurations from command line. The pattern matching syntax is defined in https://golang.org/pkg/path/#Match.
 
 Example:
 ```
 docker buildx bake --set target.args.mybuildarg=value
 docker buildx bake --set target.platform=linux/arm64
+docker buildx bake --set foo*.args.mybuildarg=value	# overrides build arg for all targets starting with 'foo'
+docker buildx bake --set *.platform=linux/arm64		# overrides platform for all targets
+docker buildx bake --set foo*.no-cache                  # bypass caching only for targets starting with 'foo'
 ```
+
+Complete list of overridable fields:
+	args, cache-from, cache-to, context, dockerfile, labels, no-cache, output, platform, pull, secrets, ssh, tags, target
 
 #### File definition
 
@@ -603,6 +611,8 @@ target "db" {
 }
 ```
 
+Complete list of valid target fields:
+	args, cache-from, cache-to, context, dockerfile, inherits, labels, no-cache, output, platform, pull, secrets, ssh, tags, target
 
 ### `buildx imagetools create [OPTIONS] [SOURCE] [SOURCE...]`
 
