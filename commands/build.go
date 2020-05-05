@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/docker/buildx/build"
-	"github.com/docker/buildx/util/flagutil"
 	"github.com/docker/buildx/util/platformutil"
 	"github.com/docker/buildx/util/progress"
 	"github.com/docker/cli/cli"
@@ -63,6 +62,7 @@ type buildOptions struct {
 }
 
 type commonOptions struct {
+	builder    string
 	noCache    *bool
 	progress   string
 	pull       *bool
@@ -191,11 +191,11 @@ func runBuild(dockerCli command.Cli, in buildOptions) error {
 		contextPathHash = in.contextPath
 	}
 
-	return buildTargets(ctx, dockerCli, map[string]build.Options{"default": opts}, in.progress, contextPathHash)
+	return buildTargets(ctx, dockerCli, map[string]build.Options{"default": opts}, in.progress, contextPathHash, in.builder)
 }
 
-func buildTargets(ctx context.Context, dockerCli command.Cli, opts map[string]build.Options, progressMode, contextPathHash string) error {
-	dis, err := getDefaultDrivers(ctx, dockerCli, contextPathHash)
+func buildTargets(ctx context.Context, dockerCli command.Cli, opts map[string]build.Options, progressMode, contextPathHash, instance string) error {
+	dis, err := getInstanceOrDefault(ctx, dockerCli, instance, contextPathHash)
 	if err != nil {
 		return err
 	}
@@ -208,7 +208,7 @@ func buildTargets(ctx context.Context, dockerCli command.Cli, opts map[string]bu
 	return err
 }
 
-func buildCmd(dockerCli command.Cli) *cobra.Command {
+func buildCmd(dockerCli command.Cli, rootOpts *rootOptions) *cobra.Command {
 	var options buildOptions
 
 	cmd := &cobra.Command{
@@ -218,6 +218,7 @@ func buildCmd(dockerCli command.Cli) *cobra.Command {
 		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options.contextPath = args[0]
+			options.builder = rootOpts.builder
 			return runBuild(dockerCli, options)
 		},
 	}
@@ -297,15 +298,15 @@ func buildCmd(dockerCli command.Cli) *cobra.Command {
 
 	flags.StringArrayVarP(&options.outputs, "output", "o", []string{}, "Output destination (format: type=local,dest=path)")
 
-	commonFlags(&options.commonOptions, flags)
+	commonBuildFlags(&options.commonOptions, flags)
 
 	return cmd
 }
 
-func commonFlags(options *commonOptions, flags *pflag.FlagSet) {
-	flags.Var(flagutil.Tristate(options.noCache), "no-cache", "Do not use cache when building the image")
+func commonBuildFlags(options *commonOptions, flags *pflag.FlagSet) {
+	options.noCache = flags.Bool("no-cache", false, "Do not use cache when building the image")
 	flags.StringVar(&options.progress, "progress", "auto", "Set type of progress output (auto, plain, tty). Use plain to show container output")
-	flags.Var(flagutil.Tristate(options.pull), "pull", "Always attempt to pull a newer version of the image")
+	options.pull = flags.Bool("pull", false, "Always attempt to pull a newer version of the image")
 }
 
 func listToMap(values []string, defaultEnv bool) map[string]string {

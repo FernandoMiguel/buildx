@@ -59,7 +59,7 @@ func runBake(dockerCli command.Cli, targets []string, in bakeOptions) error {
 	}
 
 	if in.printOnly {
-		dt, err := json.MarshalIndent(map[string]map[string]bake.Target{"target": m}, "", "   ")
+		dt, err := json.MarshalIndent(map[string]map[string]*bake.Target{"target": m}, "", "   ")
 		if err != nil {
 			return err
 		}
@@ -74,7 +74,7 @@ func runBake(dockerCli command.Cli, targets []string, in bakeOptions) error {
 
 	contextPathHash, _ := os.Getwd()
 
-	return buildTargets(ctx, dockerCli, bo, in.progress, contextPathHash)
+	return buildTargets(ctx, dockerCli, bo, in.progress, contextPathHash, in.builder)
 }
 
 func defaultFiles() ([]string, error) {
@@ -99,7 +99,7 @@ func defaultFiles() ([]string, error) {
 	return out, nil
 }
 
-func bakeCmd(dockerCli command.Cli) *cobra.Command {
+func bakeCmd(dockerCli command.Cli, rootOpts *rootOptions) *cobra.Command {
 	var options bakeOptions
 
 	cmd := &cobra.Command{
@@ -107,6 +107,13 @@ func bakeCmd(dockerCli command.Cli) *cobra.Command {
 		Aliases: []string{"f"},
 		Short:   "Build from a file",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// reset to nil to avoid override is unset
+			if !cmd.Flags().Lookup("no-cache").Changed {
+				options.noCache = nil
+			}
+			if !cmd.Flags().Lookup("pull").Changed {
+				options.pull = nil
+			}
 			return runBake(dockerCli, args, options)
 		},
 	}
@@ -119,7 +126,7 @@ func bakeCmd(dockerCli command.Cli) *cobra.Command {
 	flags.BoolVar(&options.exportPush, "push", false, "Shorthand for --set=*.output=type=registry")
 	flags.BoolVar(&options.exportLoad, "load", false, "Shorthand for --set=*.output=type=docker")
 
-	commonFlags(&options.commonOptions, flags)
+	commonBuildFlags(&options.commonOptions, flags)
 
 	return cmd
 }
