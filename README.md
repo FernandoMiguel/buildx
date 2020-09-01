@@ -117,7 +117,11 @@ When invoking a build, the `--platform` flag can be used to specify the target p
 
 Multi-platform images can be built by mainly three different strategies that are all supported by buildx and Dockerfiles. You can use the QEMU emulation support in the kernel, build on multiple native nodes using the same builder instance or use a stage in Dockerfile to cross-compile to different architectures.
 
-QEMU is the easiest way to get started if your node already supports it (e.g. if you are using Docker Desktop). It requires no changes to your Dockerfile and BuildKit will automatically detect the secondary architectures that are available. When BuildKit needs to run a binary for a different architecture it will automatically load it through a binary registered in the binfmt_misc handler. For QEMU binaries registered with binfmt_misc on the host OS to work transparently inside containers they must be registed with the fix_binary flag. This requires a kernel >= 4.8 and binfmt-support >= 2.1.7. You can check for proper registration by checking if `F` is among the flags in `/proc/sys/fs/binfmt_misc/qemu-*`. While Docker Desktop comes preconfigured with binfmt_misc support for additional platforms, for other installations it likely needs to be installed manually.
+QEMU is the easiest way to get started if your node already supports it (e.g. if you are using Docker Desktop). It requires no changes to your Dockerfile and BuildKit will automatically detect the secondary architectures that are available. When BuildKit needs to run a binary for a different architecture it will automatically load it through a binary registered in the binfmt_misc handler. For QEMU binaries registered with binfmt_misc on the host OS to work transparently inside containers they must be registed with the fix_binary flag. This requires a kernel >= 4.8 and binfmt-support >= 2.1.7. You can check for proper registration by checking if `F` is among the flags in `/proc/sys/fs/binfmt_misc/qemu-*`. While Docker Desktop comes preconfigured with binfmt_misc support for additional platforms, for other installations it likely needs to be installed using [`tonistiigi/binfmt`](https://github.com/tonistiigi/binfmt) image.
+
+```
+$ docker run --privileged --rm tonistiigi/binfmt --install all
+```
 
 Using multiple native nodes provides better support for more complicated cases not handled by QEMU and generally have better performance. Additional nodes can be added to the builder instance with `--append` flag.
 
@@ -407,6 +411,7 @@ Passes additional driver-specific options. Details for each driver:
   - `image=IMAGE` - Sets the container image to be used for running buildkit.
   - `namespace=NS` - Sets the Kubernetes namespace. Defaults to the current namespace.
   - `replicas=N` - Sets the number of `Pod` replicas. Defaults to 1.
+  - `nodeselector="label1=value1,label2=value2"` - Sets the kv of `Pod` nodeSelector. No Defaults. Example `nodeselector=kubernetes.io/arch=arm64`
   - `rootless=(true|false)` - Run the container as a non-root user without `securityContext.privileged`. [Using Ubuntu host kernel is recommended](https://github.com/moby/buildkit/blob/master/docs/rootless.md). Defaults to false.
   - `loadbalance=(sticky|random)` - Load-balancing strategy. If set to "sticky", the pod is chosen using the hash of the context path. Defaults to "sticky"
 
